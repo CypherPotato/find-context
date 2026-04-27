@@ -127,7 +127,7 @@ function printPatterns(): void {
 
 function printList(files: FoundFile[]): void {
   for (const f of files) {
-    const tag = f.pattern.kind === "instruction" ? "[instruction]" : "[context] ";
+    const tag = f.pattern.kind === "instruction" ? "[instruction]" : "[context]    ";
     console.log(`${tag}  ${f.relativePath}  (${f.pattern.tool})`);
   }
 }
