@@ -1,0 +1,38 @@
+{
+  "name": "find-context",
+  "version": "1.0.0",
+  "description": "Fast local scanner for agent instruction and context files",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "find-context": "dist/cli.js"
+  },
+  "type": "commonjs",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "tsc --noEmit",
+    "prepublishOnly": "npm run build"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "context",
+    "scanner",
+    "cli",
+    "instructions",
+    "llm"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.6.0",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.5"
+  },
+  "dependencies": {
+    "commander": "^14.0.3"
+  }
+}
