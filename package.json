@@ -1,0 +1,21 @@
+{
+  "name": "find-context",
+  "version": "0.1.1",
+  "description": "Fast local scanner for agent instruction and context files.",
+  "type": "module",
+  "bin": {
+    "find-context": "bin/find-context.js"
+  },
+  "scripts": {
+    "check": "node scripts/check.js",
+    "test": "node --test"
+  },
+  "files": [
+    "bin",
+    "scripts",
+    "src"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
