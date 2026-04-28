@@ -1,5 +1,3 @@
-import { homedir } from "node:os";
-import path from "node:path";
 import { scanInstructionFiles } from "./scanner.js";
 
 const args = process.argv.slice(2);
@@ -9,10 +7,12 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 
-const roots = args.length > 0
-  ? [path.join(homedir(), ".agents"), ...args]
-  : undefined;
-const directories = await scanInstructionFiles(roots);
+if (args.length > 0) {
+  console.error("find-context does not accept directory arguments. It always scans $HOME and $PWD.");
+  process.exit(1);
+}
+
+const directories = await scanInstructionFiles();
 
 for (const { directory, files } of directories) {
   console.log(`Directory ${directory}:`);
@@ -26,16 +26,16 @@ function printHelp() {
   console.log(`find-context
 
 Usage:
-  find-context [directories...]
+  find-context
 
 Options:
   -h, --help  Show this help message.
 
-When no directory is provided, find-context scans:
-  - $HOME/.agents
-  - .agents directories found under $PWD
+find-context always scans:
+  - $HOME
+  - $PWD
 
-It recursively lists Markdown files only inside .agents directories and extracts
-descriptions from front matter description fields or from the first Markdown
-line, limited to 180 characters.`);
+It lists AGENTS.md files found recursively and Markdown files inside .agents
+directories. Descriptions come from front matter description fields or from the
+first Markdown line, limited to 180 characters.`);
 }

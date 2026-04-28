@@ -12,10 +12,10 @@ This CLI gives agents and developers a quick terminal command for surfacing that
 
 ## Features
 
-- Always scans Markdown files recursively inside `$HOME/.agents`.
-- Searches the current working directory recursively for `.agents` directories by default.
-- Accepts one or more explicit workspace directories where `.agents` directories should be discovered.
-- Reads Markdown files recursively only inside `.agents` directories.
+- Always scans `$HOME` and `$PWD`.
+- Finds `AGENTS.md` recursively.
+- Lists Markdown files recursively inside `.agents` directories.
+- Does not accept explicit directories to scan.
 - Extracts `description` from YAML-style front matter when available.
 - Falls back to the first non-empty Markdown line.
 - Skips heavy or generated directories such as `node_modules`, `.git`, `dist`, `build`, `coverage`, `bin`, and `obj`.
@@ -43,13 +43,7 @@ Scan the default locations:
 $ find-context
 ```
 
-Scan specific directories:
-
-```bash
-$ find-context /path/to/other/folder /folder2
-```
-
-When directories are provided, `find-context` still scans `$HOME/.agents` and then searches those directories for nested `.agents` folders.
+`find-context` always searches `$HOME` and `$PWD`. It returns `AGENTS.md` files found recursively and Markdown files found inside `.agents` directories.
 
 Show help:
 
@@ -62,5 +56,5 @@ find-context --help
 Use a short instruction like this in your agent or project prompt:
 
 ```text
-Before any answer or starting any task, run `find-context` in the repository root. Read the most relevant instruction, skill, and prompt files it returns, then follow those instructions while working on the task.
+Important rule: before any answer or starting any task, run `find-context` in the repository root. Read the most relevant instruction, skill, and prompt files it returns, then follow those instructions while working on the task.
 ```

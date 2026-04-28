@@ -34,27 +34,52 @@ describe("readDescription", () => {
 });
 
 describe("scanInstructionFiles", () => {
-  test("scans markdown files recursively inside an agents directory", async () => {
-    const directory = await createTempDirectory();
-    const agents = path.join(directory, ".agents");
+  test("scans agents markdown files and AGENTS.md recursively", async () => {
+    const cwd = await createTempDirectory();
+    const home = await createTempDirectory();
+    const agents = path.join(cwd, ".agents");
     const nested = path.join(agents, "skills", "frontend");
     const ignored = path.join(agents, "node_modules", "pkg");
 
     await mkdir(nested, { recursive: true });
     await mkdir(ignored, { recursive: true });
+    await mkdir(path.join(cwd, "docs"), { recursive: true });
+    await writeFile(path.join(cwd, "AGENTS.md"), "Use root instructions.\n");
+    await writeFile(path.join(cwd, "docs", "notes.md"), "Do not show this.\n");
     await writeFile(path.join(nested, "el-js.md"), "Use this skill for @cypherpotato/el.\n");
     await writeFile(path.join(ignored, "ignored.md"), "Do not show this.\n");
 
-    const result = await scanInstructionFiles([directory]);
+    const result = await scanInstructionFiles({ cwd, home });
+    const files = result.flatMap(({ files }) => files);
 
-    assert.equal(result.length, 1);
-    assert.equal(result[0].directory, nested);
-    assert.deepEqual(result[0].files, [
+    assert.deepEqual(files.sort((left, right) => left.name.localeCompare(right.name)), [
+      {
+        name: "AGENTS.md",
+        description: "Use root instructions."
+      },
       {
         name: "el-js.md",
         description: "Use this skill for @cypherpotato/el."
       }
     ]);
+  });
+
+  test("always limits roots to home and cwd", async () => {
+    const cwd = await createTempDirectory();
+    const home = await createTempDirectory();
+    const other = await createTempDirectory();
+
+    await mkdir(path.join(home, ".agents"), { recursive: true });
+    await mkdir(path.join(cwd, ".agents"), { recursive: true });
+    await mkdir(path.join(other, ".agents"), { recursive: true });
+    await writeFile(path.join(home, ".agents", "home.md"), "Use home context.\n");
+    await writeFile(path.join(cwd, ".agents", "cwd.md"), "Use cwd context.\n");
+    await writeFile(path.join(other, ".agents", "other.md"), "Do not show this.\n");
+
+    const result = await scanInstructionFiles({ cwd, home });
+    const names = result.flatMap(({ files }) => files.map(({ name }) => name));
+
+    assert.deepEqual(names.sort(), ["cwd.md", "home.md"]);
   });
 });
 

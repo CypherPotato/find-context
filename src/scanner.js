@@ -37,21 +37,21 @@ const ignoredDirectoryNames = new Set([
 ]);
 
 export function getDefaultRoots({ cwd = process.cwd(), home = homedir() } = {}) {
-  return [path.join(home, ".agents"), cwd];
+  return [home, cwd];
 }
 
-export async function scanInstructionFiles(roots = getDefaultRoots()) {
+export async function scanInstructionFiles(options = {}) {
   const directories = new Map();
-  const seenAgentDirectories = new Set();
+  const seenInstructionFiles = new Set();
 
-  for (const root of roots) {
+  for (const root of getDefaultRoots(options)) {
     const normalizedRoot = path.resolve(root);
 
     if (!await canRead(normalizedRoot)) {
       continue;
     }
 
-    await scanRoot(normalizedRoot, directories, seenAgentDirectories);
+    await scanDirectory(normalizedRoot, directories, seenInstructionFiles);
   }
 
   return [...directories.entries()]
@@ -62,52 +62,7 @@ export async function scanInstructionFiles(roots = getDefaultRoots()) {
     }));
 }
 
-async function scanRoot(root, directories, seenAgentDirectories) {
-  if (path.basename(root).toLowerCase() === ".agents") {
-    await scanAgentDirectory(root, directories, seenAgentDirectories);
-    return;
-  }
-
-  await findAgentDirectories(root, directories, seenAgentDirectories);
-}
-
-async function findAgentDirectories(directory, directories, seenAgentDirectories) {
-  let handle;
-
-  try {
-    handle = await opendir(directory);
-  } catch {
-    return;
-  }
-
-  for await (const entry of handle) {
-    if (!entry.isDirectory() || ignoredDirectoryNames.has(entry.name)) {
-      continue;
-    }
-
-    const entryPath = path.join(directory, entry.name);
-
-    if (entry.name.toLowerCase() === ".agents") {
-      await scanAgentDirectory(entryPath, directories, seenAgentDirectories);
-      continue;
-    }
-
-    await findAgentDirectories(entryPath, directories, seenAgentDirectories);
-  }
-}
-
-async function scanAgentDirectory(directory, directories, seenAgentDirectories) {
-  const rootKey = await getRealPathKey(directory);
-
-  if (seenAgentDirectories.has(rootKey)) {
-    return;
-  }
-
-  seenAgentDirectories.add(rootKey);
-  await scanMarkdownDirectory(directory, directories);
-}
-
-async function scanMarkdownDirectory(directory, directories) {
+async function scanDirectory(directory, directories, seenInstructionFiles, insideAgents = isAgentsDirectory(directory)) {
   let handle;
 
   try {
@@ -119,17 +74,31 @@ async function scanMarkdownDirectory(directory, directories) {
   for await (const entry of handle) {
     if (entry.isDirectory()) {
       if (!ignoredDirectoryNames.has(entry.name)) {
-        await scanMarkdownDirectory(path.join(directory, entry.name), directories);
+        const entryPath = path.join(directory, entry.name);
+
+        await scanDirectory(
+          entryPath,
+          directories,
+          seenInstructionFiles,
+          insideAgents || isAgentsDirectory(entryPath)
+        );
       }
 
       continue;
     }
 
-    if (!entry.isFile() || path.extname(entry.name).toLowerCase() !== ".md") {
+    if (!entry.isFile() || !isInstructionFile(entry, insideAgents)) {
       continue;
     }
 
     const filePath = path.join(directory, entry.name);
+    const fileKey = await getRealPathKey(filePath);
+
+    if (seenInstructionFiles.has(fileKey)) {
+      continue;
+    }
+
+    seenInstructionFiles.add(fileKey);
     const description = await readDescription(filePath);
 
     if (!directories.has(directory)) {
@@ -141,6 +110,18 @@ async function scanMarkdownDirectory(directory, directories) {
       description
     });
   }
+}
+
+function isAgentsDirectory(directory) {
+  return path.basename(directory).toLowerCase() === ".agents";
+}
+
+function isInstructionFile(entry, insideAgents) {
+  if (entry.name.toLowerCase() === "agents.md") {
+    return true;
+  }
+
+  return insideAgents && path.extname(entry.name).toLowerCase() === ".md";
 }
 
 export async function readDescription(filePath) {
