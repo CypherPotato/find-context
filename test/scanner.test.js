@@ -22,14 +22,32 @@ describe("readDescription", () => {
     assert.equal(await readDescription(file), "Use this for context lookup.");
   });
 
-  test("falls back to the first markdown line and limits it to 180 characters", async () => {
+  test("falls back to the first markdown line and limits it to 120 characters plus ellipsis", async () => {
     const directory = await createTempDirectory();
     const file = path.join(directory, "prompt.md");
     const line = "a".repeat(220);
 
     await writeFile(file, `${line}\nSecond line\n`);
 
-    assert.equal((await readDescription(file)).length, 180);
+    assert.equal(await readDescription(file), `${"a".repeat(120)}...`);
+  });
+
+  test("skips front matter files without description", async () => {
+    const directory = await createTempDirectory();
+    const file = path.join(directory, "prompt.md");
+
+    await writeFile(file, "---\ntitle: Ignored\n---\n# Ignored\n");
+
+    assert.equal(await readDescription(file), null);
+  });
+
+  test("skips empty files", async () => {
+    const directory = await createTempDirectory();
+    const file = path.join(directory, "empty.md");
+
+    await writeFile(file, "");
+
+    assert.equal(await readDescription(file), null);
   });
 });
 
@@ -60,6 +78,10 @@ describe("scanInstructionFiles", () => {
       {
         name: "el-js.md",
         description: "Use this skill for @cypherpotato/el."
+      },
+      {
+        name: "ignored.md",
+        description: "Do not show this."
       }
     ]);
   });

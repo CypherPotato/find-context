@@ -12,13 +12,12 @@ This CLI gives agents and developers a quick terminal command for surfacing that
 
 ## Features
 
-- Always scans `$HOME` and `$PWD`.
+- Always scans `$HOME/.agents` and `$PWD`.
 - Finds `AGENTS.md` recursively.
-- Lists Markdown files recursively inside `.agents` directories.
-- Does not accept explicit directories to scan.
+- Lists Markdown files recursively when the directory path contains `.agents`.
+- Ignores explicit directory arguments.
 - Extracts `description` from YAML-style front matter when available.
-- Falls back to the first non-empty Markdown line.
-- Skips heavy or generated directories such as `node_modules`, `.git`, `dist`, `build`, `coverage`, `bin`, and `obj`.
+- Falls back to the first Markdown line.
 - Uses only Node.js built-in modules.
 
 ## Requirements
@@ -43,7 +42,7 @@ Scan the default locations:
 $ find-context
 ```
 
-`find-context` always searches `$HOME` and `$PWD`. It returns `AGENTS.md` files found recursively and Markdown files found inside `.agents` directories.
+`find-context` always searches `$HOME/.agents` and `$PWD`. Extra arguments are ignored. It returns `AGENTS.md` files found recursively and Markdown files found inside directories whose path contains `.agents`.
 
 Show help:
 

@@ -1,48 +1,18 @@
 import { constants } from "node:fs";
-import { access, open, opendir, realpath } from "node:fs/promises";
+import { access, open, opendir } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
-const DESCRIPTION_LIMIT = 180;
+const DESCRIPTION_LIMIT = 120;
 const READ_LIMIT = 16 * 1024;
-
-const ignoredDirectoryNames = new Set([
-  ".cache",
-  ".git",
-  ".hg",
-  ".next",
-  ".nuxt",
-  ".pnpm-store",
-  ".svelte-kit",
-  ".svn",
-  ".turbo",
-  ".venv",
-  ".vs",
-  ".vscode-test",
-  "__pycache__",
-  "artifacts",
-  "bin",
-  "bower_components",
-  "build",
-  "coverage",
-  "debug",
-  "dist",
-  "logs",
-  "node_modules",
-  "obj",
-  "out",
-  "target",
-  "tmp",
-  "vendor"
-]);
+const MAX_RECURSION_DEPTH = 10;
 
 export function getDefaultRoots({ cwd = process.cwd(), home = homedir() } = {}) {
-  return [home, cwd];
+  return [path.join(home, ".agents"), cwd];
 }
 
 export async function scanInstructionFiles(options = {}) {
   const directories = new Map();
-  const seenInstructionFiles = new Set();
 
   for (const root of getDefaultRoots(options)) {
     const normalizedRoot = path.resolve(root);
@@ -51,18 +21,21 @@ export async function scanInstructionFiles(options = {}) {
       continue;
     }
 
-    await scanDirectory(normalizedRoot, directories, seenInstructionFiles);
+    await scanDirectory(normalizedRoot, directories);
   }
 
   return [...directories.entries()]
-    .sort(([left], [right]) => left.localeCompare(right))
     .map(([directory, files]) => ({
       directory,
-      files: files.sort((left, right) => left.name.localeCompare(right.name))
+      files
     }));
 }
 
-async function scanDirectory(directory, directories, seenInstructionFiles, insideAgents = isAgentsDirectory(directory)) {
+async function scanDirectory(directory, directories, depth = 0) {
+  if (depth > MAX_RECURSION_DEPTH) {
+    return;
+  }
+
   let handle;
 
   try {
@@ -73,33 +46,20 @@ async function scanDirectory(directory, directories, seenInstructionFiles, insid
 
   for await (const entry of handle) {
     if (entry.isDirectory()) {
-      if (!ignoredDirectoryNames.has(entry.name)) {
-        const entryPath = path.join(directory, entry.name);
-
-        await scanDirectory(
-          entryPath,
-          directories,
-          seenInstructionFiles,
-          insideAgents || isAgentsDirectory(entryPath)
-        );
-      }
-
+      await scanDirectory(path.join(directory, entry.name), directories, depth + 1);
       continue;
     }
 
-    if (!entry.isFile() || !isInstructionFile(entry, insideAgents)) {
+    if (!entry.isFile() || !isInstructionFile(directory, entry.name)) {
       continue;
     }
 
     const filePath = path.join(directory, entry.name);
-    const fileKey = await getRealPathKey(filePath);
+    const description = await readDescription(filePath);
 
-    if (seenInstructionFiles.has(fileKey)) {
+    if (description === null) {
       continue;
     }
-
-    seenInstructionFiles.add(fileKey);
-    const description = await readDescription(filePath);
 
     if (!directories.has(directory)) {
       directories.set(directory, []);
@@ -112,23 +72,36 @@ async function scanDirectory(directory, directories, seenInstructionFiles, insid
   }
 }
 
-function isAgentsDirectory(directory) {
-  return path.basename(directory).toLowerCase() === ".agents";
-}
-
-function isInstructionFile(entry, insideAgents) {
-  if (entry.name.toLowerCase() === "agents.md") {
+function isInstructionFile(directory, fileName) {
+  if (fileName.toLowerCase() === "agents.md") {
     return true;
   }
 
-  return insideAgents && path.extname(entry.name).toLowerCase() === ".md";
+  return fileName.toLowerCase().endsWith(".md") && directory.toLowerCase().includes(".agents");
 }
 
 export async function readDescription(filePath) {
   const markdown = await readStart(filePath);
-  const frontMatterDescription = readFrontMatterDescription(markdown);
 
-  return normalizeDescription(frontMatterDescription ?? readFirstMarkdownLine(markdown));
+  if (markdown === null) {
+    return null;
+  }
+
+  const firstLine = readFirstMarkdownLine(markdown);
+
+  if (firstLine === null) {
+    return null;
+  }
+
+  if (firstLine === "---") {
+    const frontMatterDescription = readFrontMatterDescription(markdown);
+
+    return frontMatterDescription === null
+      ? null
+      : trimDescription(frontMatterDescription);
+  }
+
+  return trimDescription(limitDescription(firstLine));
 }
 
 async function readStart(filePath) {
@@ -141,23 +114,19 @@ async function readStart(filePath) {
 
     return buffer.subarray(0, bytesRead).toString("utf8");
   } catch {
-    return "";
+    return null;
   } finally {
     await file?.close();
   }
 }
 
 function readFrontMatterDescription(markdown) {
-  if (!markdown.startsWith("---")) {
-    return null;
-  }
-
   const lines = markdown.split(/\r?\n/);
 
   for (let index = 1; index < lines.length; index += 1) {
     const line = lines[index];
 
-    if (line.trim() === "---") {
+    if (line === "---") {
       return null;
     }
 
@@ -172,26 +141,21 @@ function readFrontMatterDescription(markdown) {
 }
 
 function readFirstMarkdownLine(markdown) {
-  const lines = markdown.split(/\r?\n/);
-  let startIndex = 0;
-
-  if (lines[0]?.trim() === "---") {
-    const endIndex = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
-    startIndex = endIndex >= 0 ? endIndex + 1 : 0;
+  if (markdown.length === 0) {
+    return null;
   }
 
-  return lines
-    .slice(startIndex)
-    .find((line) => line.trim().length > 0)
-    ?.trim() ?? "";
+  return markdown.split(/\r?\n/)[0]?.trim() ?? null;
 }
 
-function normalizeDescription(description) {
-  const compact = description.replace(/\s+/g, " ").trim();
+function limitDescription(description) {
+  return description.length > DESCRIPTION_LIMIT
+    ? `${description.slice(0, DESCRIPTION_LIMIT)}...`
+    : description;
+}
 
-  return compact.length > DESCRIPTION_LIMIT
-    ? compact.slice(0, DESCRIPTION_LIMIT)
-    : compact;
+function trimDescription(description) {
+  return description.trim().replace(/^["']+|["']+$/g, "").trim();
 }
 
 function unquote(value) {
@@ -208,13 +172,5 @@ async function canRead(directory) {
     return true;
   } catch {
     return false;
-  }
-}
-
-async function getRealPathKey(directory) {
-  try {
-    return await realpath(directory);
-  } catch {
-    return directory;
   }
 }

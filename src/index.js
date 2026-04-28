@@ -7,35 +7,40 @@ if (args.includes("--help") || args.includes("-h")) {
   process.exit(0);
 }
 
-if (args.length > 0) {
-  console.error("find-context does not accept directory arguments. It always scans $HOME and $PWD.");
-  process.exit(1);
-}
-
 const directories = await scanInstructionFiles();
 
 for (const { directory, files } of directories) {
   console.log(`Directory ${directory}:`);
 
   for (const file of files) {
-    console.log(`- ${file.name}: ${file.description}`);
+    console.log(`- ${file.name}: ${optimizeText(file.description)}`);
   }
+}
+
+function optimizeText(text) {
+  return text
+    ?.normalize("NFD")
+    .replace(/\p{Diacritic}/gu, "")
+    .normalize("NFC")
+    .replace(/\s+/g, " ")
+    .trim();
 }
 
 function printHelp() {
   console.log(`find-context
 
 Usage:
-  find-context
+  find-context [ignored arguments...]
 
 Options:
   -h, --help  Show this help message.
 
 find-context always scans:
-  - $HOME
+  - $HOME/.agents
   - $PWD
 
-It lists AGENTS.md files found recursively and Markdown files inside .agents
-directories. Descriptions come from front matter description fields or from the
-first Markdown line, limited to 180 characters.`);
+Arguments other than help are ignored. It lists AGENTS.md files found
+recursively and Markdown files inside directories containing .agents.
+Descriptions come from front matter description fields or from the first
+Markdown line, limited to 120 characters plus ellipsis.`);
 }
