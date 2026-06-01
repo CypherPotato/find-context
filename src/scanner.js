@@ -1,5 +1,5 @@
 import { constants } from "node:fs";
-import { access, open, opendir } from "node:fs/promises";
+import { access, open, opendir, realpath, stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -13,6 +13,10 @@ export function getDefaultRoots({ cwd = process.cwd(), home = homedir() } = {}) 
 
 export async function scanInstructionFiles(options = {}) {
   const directories = new Map();
+  const seen = {
+    directories: new Set(),
+    files: new Set()
+  };
 
   for (const root of getDefaultRoots(options)) {
     const normalizedRoot = path.resolve(root);
@@ -21,20 +25,25 @@ export async function scanInstructionFiles(options = {}) {
       continue;
     }
 
-    await scanDirectory(normalizedRoot, directories);
+    await scanDirectory(normalizedRoot, directories, seen);
   }
 
-  return [...directories.entries()]
-    .map(([directory, files]) => ({
-      directory,
-      files
-    }));
+  return [...directories.values()]
+    .map(({ directory, files }) => ({ directory, files }));
 }
 
-async function scanDirectory(directory, directories, depth = 0) {
+async function scanDirectory(directory, directories, seen, depth = 0) {
   if (depth > MAX_RECURSION_DEPTH) {
     return;
   }
+
+  const directoryKey = await normalizeRealPathKey(directory);
+
+  if (directoryKey === null || seen.directories.has(directoryKey)) {
+    return;
+  }
+
+  seen.directories.add(directoryKey);
 
   let handle;
 
@@ -45,30 +54,68 @@ async function scanDirectory(directory, directories, depth = 0) {
   }
 
   for await (const entry of handle) {
-    if (entry.isDirectory()) {
-      await scanDirectory(path.join(directory, entry.name), directories, depth + 1);
+    const entryPath = path.join(directory, entry.name);
+    const entryStats = await readEntryStats(entry, entryPath);
+
+    if (entryStats?.isDirectory()) {
+      await scanDirectory(entryPath, directories, seen, depth + 1);
       continue;
     }
 
-    if (!entry.isFile() || !isInstructionFile(directory, entry.name)) {
+    if (!entryStats?.isFile() || !isInstructionFile(directory, entry.name)) {
       continue;
     }
 
-    const filePath = path.join(directory, entry.name);
+    const filePath = entryPath;
+    const fileKey = await normalizeRealPathKey(filePath);
+
+    if (fileKey === null || seen.files.has(fileKey)) {
+      continue;
+    }
+
     const description = await readDescription(filePath);
 
     if (description === null) {
       continue;
     }
 
-    if (!directories.has(directory)) {
-      directories.set(directory, []);
+    const directoryKey = normalizePathKey(directory);
+
+    if (!directories.has(directoryKey)) {
+      directories.set(directoryKey, {
+        directory,
+        files: [],
+        fileKeys: new Set()
+      });
     }
 
-    directories.get(directory).push({
+    const group = directories.get(directoryKey);
+
+    const displayFileKey = normalizePathKey(filePath);
+
+    if (group.fileKeys.has(displayFileKey)) {
+      continue;
+    }
+
+    seen.files.add(fileKey);
+    group.fileKeys.add(displayFileKey);
+    group.files.push({
       name: entry.name,
+      path: filePath,
       description
     });
+  }
+}
+
+async function readEntryStats(entry, entryPath) {
+  if (!entry.isSymbolicLink()) {
+    return entry;
+  }
+
+  try {
+    return await stat(entryPath);
+  } catch {
+    return null;
   }
 }
 
@@ -172,5 +219,21 @@ async function canRead(directory) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function normalizePathKey(filePath) {
+  const resolvedPath = path.resolve(filePath);
+
+  return process.platform === "win32"
+    ? resolvedPath.toLowerCase()
+    : resolvedPath;
+}
+
+async function normalizeRealPathKey(filePath) {
+  try {
+    return normalizePathKey(await realpath(filePath));
+  } catch {
+    return null;
   }
 }

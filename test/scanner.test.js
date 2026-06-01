@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, symlink, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import assert from "node:assert/strict";
@@ -73,14 +73,17 @@ describe("scanInstructionFiles", () => {
     assert.deepEqual(files.sort((left, right) => left.name.localeCompare(right.name)), [
       {
         name: "AGENTS.md",
+        path: path.join(cwd, "AGENTS.md"),
         description: "Use root instructions."
       },
       {
         name: "el-js.md",
+        path: path.join(nested, "el-js.md"),
         description: "Use this skill for @cypherpotato/el."
       },
       {
         name: "ignored.md",
+        path: path.join(ignored, "ignored.md"),
         description: "Do not show this."
       }
     ]);
@@ -102,6 +105,46 @@ describe("scanInstructionFiles", () => {
     const names = result.flatMap(({ files }) => files.map(({ name }) => name));
 
     assert.deepEqual(names.sort(), ["cwd.md", "home.md"]);
+  });
+
+  test("does not duplicate files when default roots overlap", async () => {
+    const home = await createTempDirectory();
+    const cwd = path.join(home, ".agents");
+
+    await mkdir(cwd, { recursive: true });
+    await writeFile(path.join(cwd, "shared.md"), "Use shared context.\n");
+
+    const result = await scanInstructionFiles({ cwd, home });
+    const names = result.flatMap(({ files }) => files.map(({ name }) => name));
+
+    assert.deepEqual(names, ["shared.md"]);
+  });
+
+  test("follows symlinked directories and deduplicates real paths", async () => {
+    const root = await createTempDirectory();
+    const home = path.join(root, "home");
+    const cwd = path.join(root, "workspace");
+    const target = path.join(root, "target");
+    const targetAgents = path.join(target, ".agents");
+
+    await mkdir(home, { recursive: true });
+    await mkdir(cwd, { recursive: true });
+    await mkdir(targetAgents, { recursive: true });
+    await writeFile(path.join(targetAgents, "linked.md"), "Use linked context.\n");
+
+    await symlink(target, path.join(cwd, "first-link"), "junction");
+    await symlink(target, path.join(cwd, "second-link"), "junction");
+
+    const result = await scanInstructionFiles({ cwd, home });
+    const files = result.flatMap(({ files }) => files);
+
+    assert.deepEqual(files, [
+      {
+        name: "linked.md",
+        path: path.join(cwd, "first-link", ".agents", "linked.md"),
+        description: "Use linked context."
+      }
+    ]);
   });
 });
 
