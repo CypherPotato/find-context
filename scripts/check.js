@@ -2,7 +2,9 @@ import { spawn } from "node:child_process";
 
 const files = [
   "src/index.js",
+  "src/ranker.js",
   "src/scanner.js",
+  "test/ranker.test.js",
   "test/scanner.test.js"
 ];
 
